@@ -3,3 +3,4 @@ __pycache__
 data/raw
 *.ipynb
 raw.zip
+csv
