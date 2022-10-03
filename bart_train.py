@@ -3,14 +3,24 @@
 import logging
 import os
 import sys
-import unicodedata
+import pandas as pd
 from typing import Dict, List, Union
 import numpy as np
 import torch
 import transformers
-from datasets import DatasetDict, load_metric
+from datasets import load_metric, Dataset
 from setproctitle import setproctitle
-from transformers import HfArgumentParser, PreTrainedTokenizerFast, BartModel, set_seed
+from transformers import (
+    HfArgumentParser,
+    PreTrainedTokenizerFast,
+    Seq2SeqTrainer,
+    Trainer,
+    set_seed,
+    BartModel,
+    BartForCausalLM,
+    AutoModelForSeq2SeqLM,
+    DataCollatorForLanguageModeling,
+)
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 
 # Argument
@@ -67,35 +77,60 @@ def main() -> None:
     # Set seed before initializing model.
     set_seed(training_args.seed)
 
-    train_dataset = DatasetDict()
-    dev_dataset = DatasetDict()
-    # clean_dataset = DatasetDict()
-    # other_dataset = DatasetDict()
+    concat_list = list()
+    for filename in data_args.datasets_dirs:
+        df = pd.read_csv(filename, index_col=None, names=["num_sent", "ko_sent"])
+        concat_list.append(df)
 
-    # TODO: Datasets를 통합으로 만들다보니, 강제로 grapheme_labels를 사용하도록 되었다. 이후에 datasets 처리에 대해 변경이 필요하다.
-    if training_args.do_train:
-        train_dataset = get_concat_dataset(data_args.datasets_dirs, "train")
-        train_dataset = train_dataset.rename_column("grapheme_labels", "labels")
+    df_total = pd.concat(concat_list, axis=0, ignore_index=True)
+    train_datasets = Dataset.from_pandas(df_total)
+
+    # Pre-Training에서의 config과 어느정도 일맥상통하므로, 최대한 config를 활용하기 위해서 학습 초기에는 config를 pre-training 모델에서 가져오도록 한다.
+    # predict의 경우, 이미 학습된 모델이 있다는 가정이므로, output_dir에서 가져오도록 처리.
+    if training_args.do_train or training_args.do_eval:
+        model_path = model_args.model_name_or_path
+    elif training_args.do_predict:
+        model_path = training_args.output_dir
+
+    # create model
+    # https://huggingface.co/course/chapter7/6#initializing-a-new-model
+    # encoder_model = BartModel.from_pretrained(model_path)
+    decoder_model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+    tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
+
+    def tokenize(batch):
+        outputs = tokenizer(
+            batch["num_sent"],
+            truncation=True,
+            max_length=decoder_model.config.max_position_embeddings,
+            return_overflowing_tokens=True,
+            return_length=True,
+        )
+        input_batch = []
+        for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
+            if length == decoder_model.config.max_position_embeddings:
+                input_batch.append(input_ids)
+        return {"input_ids": input_batch}
+
+    tokenized_datasets = train_datasets.map(tokenize)
+    tokenized_datasets
+    if data_args.eval_size <= 0:
+        training_args.do_eval = False
 
     if training_args.do_eval:
-        dev_dataset = get_concat_dataset(data_args.datasets_dirs, "dev")
-        # 현재 당장 Test를 위한 KpsonSpeech만 dev로 삼음
-        # dev_dataset = get_concat_dataset(["/data01/bart/temp_workspace/stt/wav2vec2_test/aihub_datasets_arrow/fine-tuning/new-data-KsponSpeech-spelling-not-normal-20"], "dev")
-        dev_dataset = dev_dataset.rename_column("grapheme_labels", "labels")
-        dev_dataset = dev_dataset.sort("length")
+        # do_eval과 do_predict는 동일로직을 타므로, Training 과정에서, do_eval을 안하고 do_predict만 하는 것은 의미가 없다.
+        # do_train True에서는 eval만 하거나 eval과 predict을 하거나 둘중에 하나만 의미가 있다.
+        train_split_datasets = train_datasets.train_test_split(test_size=data_args.eval_size)
+        train_datasets = train_split_datasets["train"]
+        dev_datasets = train_split_datasets["test"]
+        if training_args.do_predict:
+            dev_split_datasets = dev_datasets.train_test_split(test_size=data_args.test_size)
+            dev_datasets = dev_split_datasets["train"]
+            test_datasets = dev_split_datasets["test"]
 
-    if training_args.do_predict:
-        # clean_dataset = get_concat_dataset(data_args.datasets_dirs, "eval_clean")
-        # clean_dataset = clean_dataset.rename_column("grapheme_labels", "labels")
-        # clean_dataset = clean_dataset.sort("length")
-        # other_dataset = get_concat_dataset(data_args.datasets_dirs, "eval_other")
-        # other_dataset = other_dataset.rename_column("grapheme_labels", "labels")
-        # other_dataset = other_dataset.sort("length")
-        # test_dataset = load_dataset("kresnik/zeroth_korean", "clean")
-        datasets_dirs = ["/data2/bart/temp_workspace/stt/aihub_datasets_arrow/fine-tuning/kspon_short_eval"]
-        test_dataset = get_concat_dataset(datasets_dirs, "")
-        test_dataset = test_dataset.rename_column("grapheme_labels", "labels")
-        test_dataset = test_dataset.sort("length")
+    if not training_args.do_train and training_args.do_predict:
+        # 학습하지 않고, predict만 돌리는 경우
+        test_datasets = train_datasets.train_test_split(test_size=data_args.test_size)["test"]
 
     setproctitle(training_args.setproctitle_name)
     if is_main_process(training_args.local_rank):
@@ -107,78 +142,8 @@ def main() -> None:
             name=training_args.wandb_name,
         )
 
-    # Pre-Training에서의 config과 어느정도 일맥상통하며, final_dropout과 CTC_reduction 관련 파라미터만 다르면 되므로,
-    # 최대한 config를 활용하기 위해서 학습 초기에는 config를 pre-training 모델에서 가져오도록 한다.
-    # predict의 경우, 이미 학습된 모델이 있다는 가정이므로, output_dir에서 가져오도록 처리.
-    if training_args.do_train or training_args.do_eval:
-        model_config_path = model_args.model_name_or_path
-    elif training_args.do_predict:
-        model_config_path = training_args.output_dir
-
-    config = AutoConfig.from_pretrained(
-        os.path.join(model_config_path, "config.json"), cache_dir=model_args.cache_dir, local_files_only=True
-    )
-
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_config_path,
-        local_files_only=True,
-    )
-    feature_extractor = AutoFeatureExtractor.from_pretrained(
-        os.path.join(model_config_path, "preprocessor_config.json"),
-        cache_dir=model_args.cache_dir,
-        local_files_only=True,
-    )
-
-    # gradient_checkpoint는 model config에 기본적으로 없음
-    config.update(
-        {
-            "gradient_checkpointing": training_args.gradient_checkpointing,
-            "vocab_size": len(tokenizer),  # vocab은 뭔가 실수로 잘못 넣을 여지가 있으니 확실하게 현재 데이터에 맞게 재정의해서 사용함.
-        }
-    )
-
-    # create model
-    model = AutoModelForCTC.from_pretrained(
-        model_config_path, cache_dir=model_args.cache_dir, config=config, local_files_only=True
-    )
-    model.freeze_feature_encoder()
-
     # Define evaluation metrics during training. 무조건 wer, cer은 측정한다.
     eval_metrics = {"eval_wer": load_metric("wer"), "eval_cer": load_metric("cer")}
-
-    # Now save everything to be able to create a single processor later
-    if training_args.do_train:
-        if is_main_process(training_args.local_rank):
-            # save feature extractor, tokenizer and config
-            feature_extractor.save_pretrained(training_args.output_dir)
-            tokenizer.save_pretrained(training_args.output_dir)
-            config.save_pretrained(training_args.output_dir)
-
-    processor = Wav2Vec2Processor(feature_extractor=feature_extractor, tokenizer=tokenizer)
-    from pyctcdecode import build_ctcdecoder
-
-    # lm_beam_decoder = build_ctcdecoder(
-    #     labels=list(tokenizer.encoder.keys()),
-    #     kenlm_model_path="/data/bart/stt/tadev-STT/transformers-wav2vec2/language_model/5gram_4data_wiki.arpa",
-    #     lm_score_boundary=False
-    # )
-    # beamsearch_decoder = build_ctcdecoder(
-    #     labels=list(tokenizer.encoder.keys()),
-    #     kenlm_model_path=None,
-    # )
-    # from transformers import Wav2Vec2ProcessorWithLM
-
-    # eval_loop를 진행할 시, beam_search까지 진행된 metric을 얻고 싶다면, 간단하게 하기의 펑션에서 tokenizer 부분만 수정해서 사용하면 된다.
-    # processor_with_lm = Wav2Vec2ProcessorWithLM(
-    #     feature_extractor=processor.feature_extractor,
-    #     tokenizer=processor.tokenizer,
-    #     decoder=lm_beam_decoder
-    # )
-
-    # processor_with_beam = Wav2Vec2ProcessorWithLM(
-    #     feature_extractor=processor.feature_extractor, tokenizer=processor.tokenizer, decoder=beamsearch_decoder
-    # )
-    # processor_with_lm = Wav2Vec2ProcessorWithLM.from_pretrained(model_args.kenlm_dir)
 
     def compute_metrics(pred: Dict[str, Union[List[int], torch.Tensor]]) -> Dict[str, float]:
         """compute_metrics eval_loop, pred_loop에서 사용되는 compute_metrics
@@ -192,89 +157,26 @@ def main() -> None:
         Returns:
             metrics (Dict[str, float]): 계산된 Metrics dict
         """
+
         pred_logits = pred.predictions
         pred.label_ids[pred.label_ids == -100] = tokenizer.pad_token_id
-        # np.set_printoptions(threshold=sys.maxsize)
-        # np.savetxt('./logit_batch_1.txt', pred_logits, fmt='%10.32f', delimiter=' ', newline='\n', header='', footer='', encoding=None)
-        pred_str_lm_5 = tokenizer.batch_decode(logits=pred_logits, num_processes=1, beam_width=5)
-        pred_normal_lm_5 = [unicodedata.normalize("NFC", pred_text) for pred_text in pred_str_lm_5.text]
-        # pred_str_lm_100 = processor_with_beam.batch_decode(logits=pred_logits, num_processes=8, beam_width=100)
-        # pred_normal_lm_100 = [unicodedata.normalize("NFC", pred_text) for pred_text in pred_str_lm_100.text]
-        # pred_str_beam_5 = processor_with_beam.batch_decode(logits=pred_logits, num_processes=8, beam_width=5)
-        # pred_normal_beam_5 = [unicodedata.normalize("NFC", pred_text) for pred_text in pred_str_beam_5.text]
-        # pred_str_beam_100 = processor_with_beam.batch_decode(logits=pred_logits, num_processes=8, beam_width=100)
-        # pred_normal_beam_100 = [unicodedata.normalize("NFC", pred_text) for pred_text in pred_str_beam_100.text]
-
-        pred_ids = np.argmax(pred_logits, axis=-1)
-        pred_str = tokenizer.batch_decode(pred_ids)
-        pred_normal = [unicodedata.normalize("NFC", pred_text) for pred_text in pred_str]
-
-        # with open("./100-gram_result.txt", "w") as f:
-        #     for text in pred_normal_lm_100:
-        #         f.write(text + "\n")
-        # with open("./beam_search_result.txt", "w") as f:
-        #     for text in pred_normal_beam_100:
-        #         f.write(text + "\n")
-        # we do not want to group tokens when computing the metrics
-        label_str = tokenizer.batch_decode(pred.label_ids, group_tokens=False)
-        label_normal = [unicodedata.normalize("NFC", label_text) for label_text in label_str]
-
-        # norm_hyp_word, norm_tgt_word = get_norm_text(pred_normal_lm, label_normal)
-        # err_sw, length_sw = editdistance.eval(
-        #     norm_hyp_word.split(), norm_tgt_word.split()
-        # ), len(norm_tgt_word.split())
-        # with open("./labels.txt", "w") as f:
-        #     for text in label_normal:
-        #         f.write(text + "\n")
-        print("Argmax")
-        print({k: v.compute(predictions=pred_normal, references=label_normal) for k, v in eval_metrics.items()})
-        print("beam_5")
-        print({k: v.compute(predictions=pred_normal_lm_5, references=label_normal) for k, v in eval_metrics.items()})
-        # print("beam_lm_5")
-        # print({k: v.compute(predictions=pred_normal_lm_5, references=label_normal) for k, v in eval_metrics.items()})
-        # print("beam_100")
-        # print(
-        # {k: v.compute(predictions=pred_normal_beam_100, references=label_normal) for k, v in eval_metrics.items()}
-        # )
-        # print("beam_lm_100")
-        # print({k: v.compute(predictions=pred_normal_lm_100, references=label_normal) for k, v in eval_metrics.items()})
-        metrics = {
-            k: v.compute(predictions=pred_normal_lm_5, references=label_normal) for k, v in eval_metrics.items()
-        }
-        return metrics
+        pass
 
     def preprocess_logits_for_metrics(logits, label):
         logits = logits.to("cpu") if not isinstance(logits, tuple) else logits[0].to("cpu")
         return logits
 
     # Instantiate custom data collator
-    data_collator = DataCollatorCTCWithPadding(model=model, processor=processor)
+    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer)
 
-    optimizer = torch.optim.AdamW(
-        params=model.parameters(),
-        lr=training_args.learning_rate,
-        betas=(training_args.adam_beta1, training_args.adam_beta2),
-        eps=training_args.adam_epsilon,
-        weight_decay=training_args.weight_decay,
-    )
-
-    lr_scheduler = TriStageLRScheduler(
-        training_args, training_args.max_steps, learning_rate=training_args.learning_rate
-    )
-
-    lr_scheduler = lr_scheduler.get_tri_stage_scheduler(optimizer)
-
-    # lr_scheduler = get_cosine_schedule_with_warmup(optimizer, num_warmup_steps=training_args.warmup_steps, num_training_steps=training_args.max_steps, num_cycles=training_args.num_cycles)
-
-    trainer = Trainer(
-        model=model,
+    trainer = Seq2SeqTrainer(
+        model=decoder_model,
         data_collator=data_collator,
         args=training_args,
         compute_metrics=compute_metrics,
-        train_dataset=train_dataset if training_args.do_train else None,
-        eval_dataset=dev_dataset if training_args.do_eval else None,
-        tokenizer=feature_extractor,
-        optimizers=(optimizer, lr_scheduler),
+        train_dataset=train_datasets if training_args.do_train else None,
+        eval_dataset=dev_datasets if training_args.do_eval else None,
+        tokenizer=tokenizer,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     )
 
@@ -297,25 +199,18 @@ def main() -> None:
 
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate()
+        metrics = trainer.evaluate(eval_dataset=dev_datasets)
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
     if training_args.do_predict:
         logger.info("*** Predict ***")
-        print("@@@ clean_metric")
-        test_dataset = test_dataset.train_test_split(test_size=0.02)
-        clean_results = trainer.predict(test_dataset=test_dataset["test"])
-        clean_metrics = clean_results.metrics
-        clean_metrics["predict_samples"] = len(clean_metrics)
+        test_results = trainer.predict(test_dataset=test_datasets)
+        metrics = test_results.metrics
+        metrics["predict_samples"] = len(metrics)
 
-    print("@@@ other_metric")
-    other_results = trainer.predict(test_dataset=other_dataset)
-    other_metrics = other_results.metrics
-    other_metrics["predict_samples"] = len(other_metrics)
-
-    trainer.log_metrics("predict", metrics)
-    trainer.save_metrics("predict", metrics)
+        trainer.log_metrics("predict", metrics)
+        trainer.save_metrics("predict", metrics)
 
 
 if __name__ == "__main__":

@@ -17,3 +17,7 @@ class DatasetsArguments:
     do_normalize: bool = field(
         default=False,
     )
+    eval_size: float = field(default=0.0, metadata={"help": "전체 중에서 eval로 쓸 비율"})
+    test_size: float = field(
+        default=0.0, metadata={"help": "do_train: eval중에 test로 쓸 비율, not do_train: 전체 중에서 test로 쓸 비율"}
+    )

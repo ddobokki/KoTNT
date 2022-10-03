@@ -6,6 +6,7 @@ export OMP_NUM_THREADS=8
 CUDA_VISIBLE_DEVICES=$GPU_IDS \
 python3 -m torch.distributed.launch \
 	--nproc_per_node 3 ../bart_train.py \
+	--datasets_dirs="/data2/bart/temp_workspace/nlp/KoGPT_num_converter/data/csv/post_out.csv" \
 	--model_name_or_path="/data2/bart/temp_workspace/nlp/models/kobart-base-v2" \
 	--output_dir="/data2/bart/temp_workspace/nlp/output_dir" \
 	--overwrite_output_dir \
