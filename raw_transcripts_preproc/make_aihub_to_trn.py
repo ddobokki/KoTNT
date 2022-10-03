@@ -4,7 +4,7 @@ import yaml
 import constants
 from typing import Dict
 from setproctitle import setproctitle
-from kspon_preprocess import KsponPreprocess
+from transcripts_preprocess import TranscriptsPreprocess
 
 down_data_info_const = constants.DownDataInfo()
 
@@ -93,7 +93,7 @@ def main(args):
 
             if build_company == down_data_info_const.TMAX or build_company == down_data_info_const.SOLU:
 
-                is_success = KsponPreprocess(
+                is_success = TranscriptsPreprocess(
                     common_dir=scenario_dir,
                     save_dir=scripts_save_dir,
                     is_train=args.is_train,
