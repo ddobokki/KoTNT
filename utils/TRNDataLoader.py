@@ -20,6 +20,7 @@ class TRNDataLoader:
                     if not raw_line:
                         break
                     try:
+                        # TODO [청소, 바트] : trn 전처리간의 음성 처리는 빠질 것이므로, ::는 필요없게 바뀝니다. split할 필요는 없습니다. (앞으로)
                         sent = raw_line.split("::")[1]
                     except:
                         pass
