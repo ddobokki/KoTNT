@@ -5,7 +5,7 @@ from os import PathLike
 class TRNDataLoader:
     def __init__(self, raw_folder_path: PathLike) -> None:
         self.raw_folder_path = raw_folder_path
-        self.scripts_folders = os.listdir(raw_folder_path)
+        self.scripts_folders = [file for file in os.listdir(raw_folder_path) if file.find("scripts") > -1]
 
     def generate(self):
 
