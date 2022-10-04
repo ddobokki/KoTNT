@@ -42,15 +42,13 @@ def bracket_filter(sentence, mode="phonetic"):
 
 
 def special_filter(sentence, mode="phonetic", replace=None):
-    SENTENCE_MARK = ["?", "!", "."]
     NOISE = ["o", "n", "u", "b", "l"]
-    EXCEPT = ["/", "+", "*", "-", "@", "$", "^", "&", "[", "]", "=", ";", ","] + SENTENCE_MARK
+    EXCEPT = ["/", "+", "*", "@", "$", "^", "&", "[", "]", ";", ","]
 
     new_sentence = str()
     for idx, ch in enumerate(sentence):
-        if ch not in SENTENCE_MARK:
-            if idx + 1 < len(sentence) and ch in NOISE and sentence[idx + 1] == "/":
-                continue
+        if idx + 1 < len(sentence) and ch in NOISE and sentence[idx + 1] == "/":
+            continue
 
         if ch == "#":
             new_sentence += "샾"
