@@ -154,7 +154,7 @@ class TranscriptsPreprocess(RawTranscriptsAbsBase):
                     # 해당 txt파일로부터 scripts를 불러온 다음 (경로) :: (scripts)식으로 만들어 list식으로 만드는 부분.
                     with open(text_file, "r", encoding="utf-8") as f:
                         read_from_file = f.read()
-                        if read_from_file.stripe():
+                        if read_from_file.strip():
                             # label이 없는 경우 건너뜀
                             scripts.append(read_from_file)
                         else:
