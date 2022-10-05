@@ -4,8 +4,7 @@ from transformers import TrainingArguments
 
 
 @dataclass
-class BartTrainingArguments(TrainingArguments):
-    do_scratch: Optional[bool] = field(default=False)
+class KonukoTrainingArguments(TrainingArguments):
     setproctitle_name: Optional[str] = field(
         default="", metadata={"help": "process name (Could see nvidia-smi process name)"}
     )
