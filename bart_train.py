@@ -162,9 +162,9 @@ def main() -> None:
 
         return result
 
-    def preprocess_logits_for_metrics(logits, label):
+    def preprocess_logits_for_metrics(logits, labels):
         logits = logits.to("cpu") if not isinstance(logits, tuple) else logits[0].to("cpu")
-        logits = logits[0].argmax(dim=-1)
+        # logits = logits[0].argmax(dim=-1)
         return logits
 
     # Instantiate custom data collator
