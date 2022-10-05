@@ -4,8 +4,17 @@
 # 때문에 회사별 폴더구조 규칙등을 고려하여, trn파일을 만들 수 있도록 처리한다.
 
 DATA_ROOT_DIR=../data/raw/
+
+############### For Make Just Train SET
+# IS_TRAIN=1
+# IS_MAKE_DEV=0
+############### For Make Train, Dev SET
 IS_TRAIN=1
 IS_MAKE_DEV=1
+############### For Make Eval SET
+# IS_TRAIN=0
+# IS_MAKE_DEV=0
+
 SCENARIO_NAME=KconfSpeech
 
 python ../raw_transcripts_preproc/make_aihub_to_trn.py \
