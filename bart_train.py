@@ -14,17 +14,15 @@ from transformers import (
     HfArgumentParser,
     PreTrainedTokenizerFast,
     Seq2SeqTrainer,
-    Trainer,
     set_seed,
     BartModel,
-    BartForCausalLM,
     AutoModelForSeq2SeqLM,
-    DataCollatorForLanguageModeling,
+    DataCollatorForSeq2Seq,
 )
 from transformers.trainer_utils import get_last_checkpoint, is_main_process
 
 # Argument
-from hf_bart.utils import DatasetsArguments, ModelArguments, BartTrainingArguments
+from utils import DatasetsArguments, ModelArguments, KonukoTrainingArguments
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +32,7 @@ def main() -> None:
     Linear+CTC loss 형태의 HuggingFace에서 지원해주는 모델의 형태입니다.
     Wav2Vec2ForCTC를 사용하도록 되어있으며, 사용할 수 있는 부분은 Auto를 최대한 활용하였습니다.
     """
-    parser = HfArgumentParser((ModelArguments, DatasetsArguments, BartTrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DatasetsArguments, KonukoTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -93,7 +91,7 @@ def main() -> None:
         model_path = training_args.output_dir
 
     # create model
-    # https://huggingface.co/course/chapter7/6#initializing-a-new-model
+    # https://huggingface.co/course/chapter7/4?fw=pt
     # encoder_model = BartModel.from_pretrained(model_path)
     decoder_model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
@@ -167,7 +165,7 @@ def main() -> None:
         return logits
 
     # Instantiate custom data collator
-    data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer)
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
 
     trainer = Seq2SeqTrainer(
         model=decoder_model,
