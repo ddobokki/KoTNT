@@ -8,7 +8,8 @@ from typing import Dict, List, Union
 import numpy as np
 import torch
 import transformers
-from datasets import load_metric, Dataset
+import datasets
+from datasets import load_metric, Dataset, load_from_disk
 from setproctitle import setproctitle
 from transformers import (
     HfArgumentParser,
@@ -19,7 +20,8 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     DataCollatorForSeq2Seq,
 )
-from transformers.trainer_utils import get_last_checkpoint, is_main_process
+from evaluate import load
+from transformers.trainer_utils import get_last_checkpoint, is_main_process, EvalPrediction
 
 # Argument
 from utils import DatasetsArguments, ModelArguments, KonukoTrainingArguments
@@ -28,10 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """
-    Linear+CTC loss 형태의 HuggingFace에서 지원해주는 모델의 형태입니다.
-    Wav2Vec2ForCTC를 사용하도록 되어있으며, 사용할 수 있는 부분은 Auto를 최대한 활용하였습니다.
-    """
     parser = HfArgumentParser((ModelArguments, DatasetsArguments, KonukoTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -93,42 +91,42 @@ def main() -> None:
     # create model
     # https://huggingface.co/course/chapter7/4?fw=pt
     # encoder_model = BartModel.from_pretrained(model_path)
-    decoder_model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
 
     def tokenize(batch):
-        outputs = tokenizer(
+        model_inputs = tokenizer(
             batch["num_sent"],
-            truncation=True,
-            max_length=decoder_model.config.max_position_embeddings,
-            return_overflowing_tokens=True,
             return_length=True,
         )
-        input_batch = []
-        for length, input_ids in zip(outputs["length"], outputs["input_ids"]):
-            if length == decoder_model.config.max_position_embeddings:
-                input_batch.append(input_ids)
-        return {"input_ids": input_batch}
+        labels = tokenizer(
+            batch["ko_sent"],
+        )
+        model_inputs["labels"] = list(reversed(labels["input_ids"]))
+        return model_inputs
 
-    tokenized_datasets = train_datasets.map(tokenize)
-    tokenized_datasets
+    temp_datasets_dir = "/data2/bart/temp_workspace/nlp/bart_datasets/fine-tuning/bart_konuko"
+    if os.path.isdir(temp_datasets_dir):
+        train_datasets = load_from_disk(temp_datasets_dir)
+    else:
+        train_datasets = train_datasets.map(tokenize, remove_columns=["num_sent", "ko_sent"])
     if data_args.eval_size <= 0:
         training_args.do_eval = False
 
     if training_args.do_eval:
         # do_eval과 do_predict는 동일로직을 타므로, Training 과정에서, do_eval을 안하고 do_predict만 하는 것은 의미가 없다.
         # do_train True에서는 eval만 하거나 eval과 predict을 하거나 둘중에 하나만 의미가 있다.
-        train_split_datasets = train_datasets.train_test_split(test_size=data_args.eval_size)
+        train_split_datasets = train_datasets.train_test_split(test_size=data_args.eval_size, seed=training_args.seed)
         train_datasets = train_split_datasets["train"]
         dev_datasets = train_split_datasets["test"]
         if training_args.do_predict:
-            dev_split_datasets = dev_datasets.train_test_split(test_size=data_args.test_size)
+            dev_split_datasets = dev_datasets.train_test_split(test_size=data_args.test_size, seed=training_args.seed)
             dev_datasets = dev_split_datasets["train"]
             test_datasets = dev_split_datasets["test"]
 
     if not training_args.do_train and training_args.do_predict:
         # 학습하지 않고, predict만 돌리는 경우
-        test_datasets = train_datasets.train_test_split(test_size=data_args.test_size)["test"]
+        test_datasets = train_datasets.train_test_split(test_size=data_args.test_size, seed=training_args.seed)["test"]
 
     setproctitle(training_args.setproctitle_name)
     if is_main_process(training_args.local_rank):
@@ -140,35 +138,40 @@ def main() -> None:
             name=training_args.wandb_name,
         )
 
-    # Define evaluation metrics during training. 무조건 wer, cer은 측정한다.
-    eval_metrics = {"eval_wer": load_metric("wer"), "eval_cer": load_metric("cer")}
+    blue = load("evaluate-metric/bleu")
+    rouge = load("evaluate-metric/rouge")
 
-    def compute_metrics(pred: Dict[str, Union[List[int], torch.Tensor]]) -> Dict[str, float]:
-        """compute_metrics eval_loop, pred_loop에서 사용되는 compute_metrics
+    def compute_metrics(evaluation_result: EvalPrediction) -> Dict[str, float]:
+        result = dict()
 
-        argmax -> tokenizer.batch_decode: 일반적인 beam_width=1 형태의 argmax 치환 비교방식
-        processor_with_lm.batch_decode: argmax를 해서 넣으면 안되며, logit으로 lm을 넣은(혹은 넣지 않은) beam_search를 계산하게 된다.
+        predicts = evaluation_result.predictions
+        predicts = np.where(predicts != -100, predicts, tokenizer.pad_token_id)
+        decoded_preds = tokenizer.batch_decode(predicts, skip_special_tokens=True)
 
-        Args:
-            pred (Dict[str, Union[List[int], torch.Tensor]]): 예측값
+        labels = evaluation_result.label_ids
+        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
-        Returns:
-            metrics (Dict[str, float]): 계산된 Metrics dict
-        """
+        blue_score = blue._compute(decoded_preds, decoded_labels)
+        blue_score.pop("precisions")
 
-        pred_logits = pred.predictions
-        pred.label_ids[pred.label_ids == -100] = tokenizer.pad_token_id
-        pass
+        rouge_score = rouge._compute(decoded_preds, decoded_labels)
 
-    def preprocess_logits_for_metrics(logits, label):
+        result.update(rouge_score)
+        result.update(blue_score)
+
+        return result
+
+    def preprocess_logits_for_metrics(logits, labels):
         logits = logits.to("cpu") if not isinstance(logits, tuple) else logits[0].to("cpu")
+        # logits = logits[0].argmax(dim=-1)
         return logits
 
     # Instantiate custom data collator
-    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer)
+    data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 
     trainer = Seq2SeqTrainer(
-        model=decoder_model,
+        model=model,
         data_collator=data_collator,
         args=training_args,
         compute_metrics=compute_metrics,
