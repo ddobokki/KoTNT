@@ -1,1 +1,1 @@
-from utils.arguments import DatasetsArguments, ModelArguments, KonukoTrainingArguments
+from utils.arguments import DatasetsArguments, ModelArguments, TNTTrainingArguments

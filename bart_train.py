@@ -22,7 +22,7 @@ from evaluate import load
 from transformers.trainer_utils import get_last_checkpoint, is_main_process, EvalPrediction
 
 # Argument
-from utils import DatasetsArguments, ModelArguments, KonukoTrainingArguments
+from utils import DatasetsArguments, ModelArguments, TNTTrainingArguments
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ def main() -> None:
     """
     @@@@@@@@@@@@@@@@@@@@ 파라미터 받음
     """
-    parser = HfArgumentParser((ModelArguments, DatasetsArguments, KonukoTrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DatasetsArguments, TNTTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
