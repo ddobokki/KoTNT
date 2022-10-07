@@ -1,1 +1,1 @@
-from utils.arguments import DatasetsArguments, ModelArguments, TNTTrainingArguments
+from utils.arguments import DatasetsArguments, ModelArguments, TNTTrainingArguments, InferenceArguments
