@@ -10,8 +10,8 @@ cache_dir=""
 # T5 finetune script
 export OMP_NUM_THREADS=8
 python $script_path \
-    --model_name_or_path=$model_name_or_path \
-    --data_name_or_script=$data_name_or_script \
+    --model_name=$model_name_or_path \
+    --data_name=$data_name_or_script \
     --output_dir=$output_dir \
     --cache=$cache_dir \
     --per_device_train_batch_size = 10 \
