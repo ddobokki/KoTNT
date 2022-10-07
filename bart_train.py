@@ -4,12 +4,10 @@ import logging
 import os
 import sys
 import pandas as pd
-from typing import Dict, List, Union
+from typing import Dict, List
 import numpy as np
-import torch
 import transformers
-import datasets
-from datasets import load_metric, Dataset, load_from_disk
+from datasets import Dataset, load_from_disk
 from setproctitle import setproctitle
 from transformers import (
     HfArgumentParser,
@@ -30,15 +28,31 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
+    """
+    @@@@@@@@@@@@@@@@@@@@ 파라미터 받음
+    """
     parser = HfArgumentParser((ModelArguments, DatasetsArguments, KonukoTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
-        # If we pass only one argument to the script and it's the path to a json file,
-        # let's parse it to get our arguments.
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    # 이어서 학습 시킬 때 쓸 수 있을듯
+    """
+    proc name, wandb 설정
+    """
+    setproctitle(training_args.setproctitle_name)
+    if is_main_process(training_args.local_rank):
+        import wandb
+
+        wandb.init(
+            project=training_args.wandb_project,
+            entity=training_args.wandb_entity,
+            name=training_args.wandb_name,
+        )
+
+    """
+    @@@@@@@@@@@@@@@@@@@@ 이어서 학습할지 처리
+    """
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
@@ -52,7 +66,10 @@ def main() -> None:
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
-    # Setup logging
+
+    """
+    @@@@@@@@@@@@@@@@@@@@ logger 세팅
+    """
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
         datefmt="%m/%d/%Y %H:%M:%S",
@@ -60,19 +77,22 @@ def main() -> None:
     )
     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
 
-    # Log on each process the small summary:
     logger.warning(
         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
         f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
     )
-    # Set the verbosity to info of the Transformers logger (on main process only):
     if is_main_process(training_args.local_rank):
         transformers.utils.logging.set_verbosity_info()
     logger.info("Training/evaluation parameters %s", training_args)
 
-    # Set seed before initializing model.
+    """
+    @@@@@@@@@@@@@@@@@@@@ 모델 시드 설정
+    """
     set_seed(training_args.seed)
 
+    """
+    @@@@@@@@@@@@@@@@@@@@ RAW 데이터 로드
+    """
     concat_list = list()
     for filename in data_args.datasets_dirs:
         df = pd.read_csv(filename, index_col=None, names=["num_sent", "ko_sent"])
@@ -88,10 +108,9 @@ def main() -> None:
     elif training_args.do_predict:
         model_path = training_args.output_dir
 
-    # create model
-    # https://huggingface.co/course/chapter7/4?fw=pt
-    # encoder_model = BartModel.from_pretrained(model_path)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
+    """
+    @@@@@@@@@@@@@@@@@@@@ 토크나이저 설정
+    """
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
 
     def tokenize(batch):
@@ -105,6 +124,9 @@ def main() -> None:
         model_inputs["labels"] = list(reversed(labels["input_ids"]))
         return model_inputs
 
+    """
+    @@@@@@@@@@@@@@@@@@@@ 토크나이징 진행, 빠르게 불러 쓰기 위해 datasets로 임시 저장
+    """
     temp_datasets_dir = "/data2/bart/temp_workspace/nlp/bart_datasets/fine-tuning/bart_konuko"
     if os.path.isdir(temp_datasets_dir):
         train_datasets = load_from_disk(temp_datasets_dir)
@@ -113,6 +135,9 @@ def main() -> None:
     if data_args.eval_size <= 0:
         training_args.do_eval = False
 
+    """
+    @@@@@@@@@@@@@@@@@@@@ 데이터셋 분리
+    """
     if training_args.do_eval:
         # do_eval과 do_predict는 동일로직을 타므로, Training 과정에서, do_eval을 안하고 do_predict만 하는 것은 의미가 없다.
         # do_train True에서는 eval만 하거나 eval과 predict을 하거나 둘중에 하나만 의미가 있다.
@@ -128,16 +153,9 @@ def main() -> None:
         # 학습하지 않고, predict만 돌리는 경우
         test_datasets = train_datasets.train_test_split(test_size=data_args.test_size, seed=training_args.seed)["test"]
 
-    setproctitle(training_args.setproctitle_name)
-    if is_main_process(training_args.local_rank):
-        import wandb
-
-        wandb.init(
-            project=training_args.wandb_project,
-            entity=training_args.wandb_entity,
-            name=training_args.wandb_name,
-        )
-
+    """
+    @@@@@@@@@@@@@@@@@@@@ 검증 Metrics 정의
+    """
     blue = load("evaluate-metric/bleu")
     rouge = load("evaluate-metric/rouge")
 
@@ -145,11 +163,14 @@ def main() -> None:
         result = dict()
 
         predicts = evaluation_result.predictions
-        predicts = np.where(predicts != -100, predicts, tokenizer.pad_token_id)
-        decoded_preds = tokenizer.batch_decode(predicts, skip_special_tokens=True)
+        reversed_predicts = np.flip(predicts, axis=-1)
+        reversed_predicts = np.where(reversed_predicts != -100, reversed_predicts, tokenizer.pad_token_id)
+        decoded_preds = tokenizer.batch_decode(reversed_predicts, skip_special_tokens=True)
 
         labels = evaluation_result.label_ids
-        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        reversed_labels = np.flip(labels, axis=-1)
+        reversed_labels = np.where(reversed_labels != -100, reversed_labels, tokenizer.pad_token_id)
+        labels = np.where(reversed_labels != -100, reversed_labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         blue_score = blue._compute(decoded_preds, decoded_labels)
@@ -163,11 +184,18 @@ def main() -> None:
         return result
 
     def preprocess_logits_for_metrics(logits, labels):
+        """
+        @@@@@@@@@@@@@@@@@@@@ eval 전에 CPU로 빼고, --predict_with_generate=false 에 따른 argmax 처리
+        """
         logits = logits.to("cpu") if not isinstance(logits, tuple) else logits[0].to("cpu")
-        # logits = logits[0].argmax(dim=-1)
+        logits = logits.argmax(dim=-1)
         return logits
 
-    # Instantiate custom data collator
+    """
+    @@@@@@@@@@@@@@@@@@@@ 모델과 콜레터 선언 https://huggingface.co/course/chapter7/4?fw=pt
+    """
+    # encoder_model = BartModel.from_pretrained(model_path)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 
     trainer = Seq2SeqTrainer(
@@ -181,7 +209,9 @@ def main() -> None:
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     )
 
-    # Training
+    """
+    @@@@@@@@@@@@@@@@@@@@ 조건의 맞는 학습, 검증, 테스트 진행
+    """
     if training_args.do_train:
 
         # use last checkpoint if exist

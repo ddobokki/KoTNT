@@ -11,18 +11,20 @@ python3 -m torch.distributed.launch \
 	--output_dir="/data2/bart/temp_workspace/nlp/output_dir" \
 	--overwrite_output_dir \
 	--save_total_limit="3" \
-	--max_steps="640000" \
-    --save_strategy="steps" \
-	--save_steps="1000" \
+	--max_steps="650000" \
+	--save_strategy="steps" \
+	--save_steps="10000" \
 	--evaluation_strategy="steps" \
-	--eval_steps="1000" \
-	--logging_steps="10" \
-	--warmup_steps="1000" \
-	--learning_rate="1e-4" \
+	--eval_steps="10000" \
+	--logging_steps="2000" \
+	--warmup_steps="70000" \
+	--lr_scheduler_type="cosine" \
+	--optim="adamw_torch" \
+	--learning_rate="2e-5" \
 	--weight_decay="0" \
-	--per_device_train_batch_size="1" \
-    --gradient_accumulation_steps="2" \
-	--per_device_eval_batch_size="2" \
+	--per_device_train_batch_size="2" \
+    --gradient_accumulation_steps="1" \
+	--per_device_eval_batch_size="1" \
 	--seed="42" \
     --cache_dir="./.cache" \
 	--group_by_length \
@@ -31,9 +33,10 @@ python3 -m torch.distributed.launch \
     --load_best_model_at_end \
 	--do_train \
 	--do_eval \
+	--eval_size="0.1" \
 	--setproctitle_name="bart" \
-    --wandb_project="BartForCausalLM" \
+    --wandb_project="BartForConditionalGeneration" \
     --wandb_entity="bart_tadev" \
-    --wandb_name="ko_to_num" \
+    --wandb_name="num_to_ko" \
     --greater_is_better="false" \
-    --do_normalize
+	--predict_with_generate="false"
