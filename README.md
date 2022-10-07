@@ -1,4 +1,4 @@
-# Konuko Model ([Ko] -> [nu]m -> [ko] Model)
+# TNT🧨 Model (Text -> Num -> Text Model)
 
 한국어 문장에서 숫자가 들어간 문장을 한글로 변환 해주는 모델입니다.
 그 반대도 가능합니다.

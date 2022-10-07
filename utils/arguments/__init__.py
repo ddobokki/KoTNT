@@ -1,3 +1,4 @@
 from utils.arguments.DatasetsArguments import DatasetsArguments
 from utils.arguments.ModelArguments import ModelArguments
-from utils.arguments.KonukoTrainingArguments import KonukoTrainingArguments
+from utils.arguments.TNTTrainingArguments import TNTTrainingArguments
+from utils.arguments.InferenceArguments import InferenceArguments

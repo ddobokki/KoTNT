@@ -15,11 +15,6 @@ class ModelArguments:
         default=None,
         metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
     )
-    model_config_path: str = field(default="")
-    freeze_feature_extractor: Optional[bool] = field(
-        default=True,
-        metadata={"help": "Whether to freeze the feature extractor layers of the model."},
-    )
     verbose_logging: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether to log verbose messages or not."},
