@@ -121,7 +121,9 @@ def main() -> None:
         labels = tokenizer(
             batch["ko_sent"],
         )
-        model_inputs["labels"] = list(reversed(labels["input_ids"]))
+        reversed_labels = list(reversed(labels["input_ids"]))
+        reversed_labels.append(tokenizer.eos_token_id)
+        model_inputs["labels"] = reversed_labels
         return model_inputs
 
     """
@@ -132,6 +134,7 @@ def main() -> None:
         train_datasets = load_from_disk(temp_datasets_dir)
     else:
         train_datasets = train_datasets.map(tokenize, remove_columns=["num_sent", "ko_sent"])
+        train_datasets.save_to_disk(temp_datasets_dir)
     if data_args.eval_size <= 0:
         training_args.do_eval = False
 
