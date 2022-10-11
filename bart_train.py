@@ -173,13 +173,13 @@ def main() -> None:
         labels = evaluation_result.label_ids
         reversed_labels = np.flip(labels, axis=-1)
         reversed_labels = np.where(reversed_labels != -100, reversed_labels, tokenizer.pad_token_id)
-        labels = np.where(reversed_labels != -100, reversed_labels, tokenizer.pad_token_id)
-        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(reversed_labels, skip_special_tokens=True)
 
         blue_score = blue._compute(decoded_preds, decoded_labels)
         blue_score.pop("precisions")
 
-        rouge_score = rouge._compute(decoded_preds, decoded_labels)
+        # latin이 아닐 시, tokenizer는 split해줘야 띄어쓰기 단위로 n-gram이 정확히 계산됨
+        rouge_score = rouge._compute(decoded_preds, decoded_labels, tokenizer=lambda x: x.split())
 
         result.update(rouge_score)
         result.update(blue_score)

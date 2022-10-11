@@ -29,7 +29,7 @@ class BartText2TextGenerationPipeline(Text2TextGenerationPipeline):
 
 
 def main(inference_args: Tuple) -> None:
-    text = ["그러게 누가 6시까지 술을 마시래?"]
+    texts = ["그러게 누가 6시까지 술을 마시래?"]
     tokenizer = AutoTokenizer.from_pretrained(
         inference_args.model_name_or_path,
     )
@@ -69,7 +69,7 @@ def main(inference_args: Tuple) -> None:
               [`~generation_utils.GenerationMixin.constrained_beam_search`], if `constraints!=None` or
               `force_words_ids!=None`.
     """
-    pred = seq2seqlm_pipeline(text, **kwargs)
+    pred = seq2seqlm_pipeline(texts, **kwargs)
     print(pred)
 
 
