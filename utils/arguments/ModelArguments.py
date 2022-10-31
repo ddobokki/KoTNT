@@ -19,3 +19,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Whether to log verbose messages or not."},
     )
+    direction: Optional[str] = field(
+        default="forward",
+        metadata={"help": "How inference your label direction? default: forward [forward, backward]"},
+    )
