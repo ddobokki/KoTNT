@@ -38,8 +38,7 @@ def main(inference_args: Tuple) -> None:
         inference_args.model_name_or_path,
     )
 
-    if model.config.model_type == "bart":
-        print("bart의 학습은 예측 결과가 반대로 나오므로, 결과 후처리가 필요합니다.")
+    if model.config.model_type == "bart" and inference_args.direction == "backward":
         seq2seqlm_pipeline = BartText2TextGenerationPipeline(model=model, tokenizer=tokenizer)
     else:
         seq2seqlm_pipeline = Text2TextGenerationPipeline(model=model, tokenizer=tokenizer)

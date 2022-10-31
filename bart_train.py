@@ -91,16 +91,8 @@ def main() -> None:
     set_seed(training_args.seed)
 
     """
-    @@@@@@@@@@@@@@@@@@@@ RAW 데이터 로드
+    @@@@@@@@@@@@@@@@@@@@ 토크나이저 설정
     """
-    concat_list = list()
-    for filename in data_args.datasets_dirs:
-        df = pd.read_csv(filename, index_col=None, names=["num_sent", "ko_sent"])
-        concat_list.append(df)
-
-    df_total = pd.concat(concat_list, axis=0, ignore_index=True)
-    train_datasets = Dataset.from_pandas(df_total)
-
     # Pre-Training에서의 config과 어느정도 일맥상통하므로, 최대한 config를 활용하기 위해서 학습 초기에는 config를 pre-training 모델에서 가져오도록 한다.
     # predict의 경우, 이미 학습된 모델이 있다는 가정이므로, output_dir에서 가져오도록 처리.
     if training_args.do_train or training_args.do_eval:
@@ -108,53 +100,47 @@ def main() -> None:
     elif training_args.do_predict:
         model_path = training_args.output_dir
 
-    """
-    @@@@@@@@@@@@@@@@@@@@ 토크나이저 설정
-    """
     tokenizer = PreTrainedTokenizerFast.from_pretrained(model_path)
 
     def tokenize(batch):
         model_inputs = tokenizer(
-            batch["num_sent"],
+            batch["sen_col"],
             return_length=True,
         )
         labels = tokenizer(
-            batch["ko_sent"],
+            batch["num_col"],
         )
-        reversed_labels = list(reversed(labels["input_ids"]))
-        reversed_labels.append(tokenizer.eos_token_id)
-        model_inputs["labels"] = reversed_labels
+        if model_args.direction == "backward":
+            labels = list(reversed(labels["input_ids"]))
+            labels.append(tokenizer.eos_token_id)
+            model_inputs["labels"] = labels
+        else:
+            labels = labels["input_ids"]
+            labels.append(tokenizer.eos_token_id)
+            model_inputs["labels"] = labels
         return model_inputs
 
     """
-    @@@@@@@@@@@@@@@@@@@@ 토크나이징 진행, 빠르게 불러 쓰기 위해 datasets로 임시 저장
+    @@@@@@@@@@@@@@@@@@@@ RAW Data 로딩, 토크나이징 진행, 빠르게 불러 쓰기 위해 train datasets만 임시 저장
     """
-    temp_datasets_dir = "/data2/bart/temp_workspace/nlp/bart_datasets/fine-tuning/bart_konuko"
-    if os.path.isdir(temp_datasets_dir):
-        train_datasets = load_from_disk(temp_datasets_dir)
-    else:
-        train_datasets = train_datasets.map(tokenize, remove_columns=["num_sent", "ko_sent"])
-        train_datasets.save_to_disk(temp_datasets_dir)
-    if data_args.eval_size <= 0:
-        training_args.do_eval = False
-
-    """
-    @@@@@@@@@@@@@@@@@@@@ 데이터셋 분리
-    """
-    if training_args.do_eval:
-        # do_eval과 do_predict는 동일로직을 타므로, Training 과정에서, do_eval을 안하고 do_predict만 하는 것은 의미가 없다.
-        # do_train True에서는 eval만 하거나 eval과 predict을 하거나 둘중에 하나만 의미가 있다.
-        train_split_datasets = train_datasets.train_test_split(test_size=data_args.eval_size, seed=training_args.seed)
-        train_datasets = train_split_datasets["train"]
-        dev_datasets = train_split_datasets["test"]
-        if training_args.do_predict:
-            dev_split_datasets = dev_datasets.train_test_split(test_size=data_args.test_size, seed=training_args.seed)
-            dev_datasets = dev_split_datasets["train"]
-            test_datasets = dev_split_datasets["test"]
-
-    if not training_args.do_train and training_args.do_predict:
-        # 학습하지 않고, predict만 돌리는 경우
-        test_datasets = train_datasets.train_test_split(test_size=data_args.test_size, seed=training_args.seed)["test"]
+    if training_args.do_train:
+        if os.path.isdir(data_args.temp_datasets_dir):
+            train_datasets = load_from_disk(data_args.temp_datasets_dir)
+        else:
+            train_df = pd.read_csv(
+                data_args.train_csv_paths,
+                index_col=None,
+            )
+            valid_datasets = Dataset.from_pandas(train_df)
+            train_datasets = train_datasets.map(tokenize, remove_columns=["num_col", "sen_col"])
+            train_datasets.save_to_disk(data_args.temp_datasets_dir)
+    elif training_args.do_eval or training_args.do_predict:
+        valid_df = pd.read_csv(
+            data_args.valid_csv_paths,
+            index_col=None,
+        )
+        valid_datasets = Dataset.from_pandas(valid_df)
+        valid_datasets = valid_datasets.map(tokenize, remove_columns=["num_col", "sen_col"])
 
     """
     @@@@@@@@@@@@@@@@@@@@ 검증 Metrics 정의
@@ -166,14 +152,16 @@ def main() -> None:
         result = dict()
 
         predicts = evaluation_result.predictions
-        reversed_predicts = np.flip(predicts, axis=-1)
-        reversed_predicts = np.where(reversed_predicts != -100, reversed_predicts, tokenizer.pad_token_id)
-        decoded_preds = tokenizer.batch_decode(reversed_predicts, skip_special_tokens=True)
+        if model_args.direction == "backward":
+            predicts = np.flip(predicts, axis=-1)
+        predicts = np.where(predicts != -100, predicts, tokenizer.pad_token_id)
+        decoded_preds = tokenizer.batch_decode(predicts, skip_special_tokens=True)
 
         labels = evaluation_result.label_ids
-        reversed_labels = np.flip(labels, axis=-1)
-        reversed_labels = np.where(reversed_labels != -100, reversed_labels, tokenizer.pad_token_id)
-        decoded_labels = tokenizer.batch_decode(reversed_labels, skip_special_tokens=True)
+        if model_args.direction == "backward":
+            labels = np.flip(labels, axis=-1)
+        labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
         blue_score = blue._compute(decoded_preds, decoded_labels)
         blue_score.pop("precisions")
@@ -197,7 +185,6 @@ def main() -> None:
     """
     @@@@@@@@@@@@@@@@@@@@ 모델과 콜레터 선언 https://huggingface.co/course/chapter7/4?fw=pt
     """
-    # encoder_model = BartModel.from_pretrained(model_path)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_path)
     data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 
@@ -207,7 +194,7 @@ def main() -> None:
         args=training_args,
         compute_metrics=compute_metrics,
         train_dataset=train_datasets if training_args.do_train else None,
-        eval_dataset=dev_datasets if training_args.do_eval else None,
+        eval_dataset=valid_datasets if training_args.do_eval else None,
         tokenizer=tokenizer,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     )
@@ -233,13 +220,13 @@ def main() -> None:
 
     if training_args.do_eval:
         logger.info("*** Evaluate ***")
-        metrics = trainer.evaluate(eval_dataset=dev_datasets)
+        metrics = trainer.evaluate(eval_dataset=valid_datasets)
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
     if training_args.do_predict:
         logger.info("*** Predict ***")
-        test_results = trainer.predict(test_dataset=test_datasets)
+        test_results = trainer.predict(test_dataset=valid_datasets)
         metrics = test_results.metrics
         metrics["predict_samples"] = len(metrics)
 
