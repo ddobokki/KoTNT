@@ -1,5 +1,7 @@
+import os
 import csv
 import numpy as np
+import argparse
 from tqdm import tqdm
 import difflib
 import re
@@ -21,13 +23,27 @@ def tot_eda(data):
     print("범위 : ", np.max(data) - np.min(data))
 
 
-def main() -> None:
+def get_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--csv_path",
+        type=str,
+        metavar="DIR",
+        default="./data/csv/train.csv",
+        required=True,
+        help="where is your csv data dir?",
+    )
+    return parser
+
+
+def main(args) -> None:
     np_eda_ko = np.array([], dtype=int)
     np_eda_num = np.array([], dtype=int)
     np_post_ko = np.array([], dtype=int)
     np_post_num = np.array([], dtype=int)
-    csv_path = "./data/csv/out.csv"
-    post_path = "./data/csv/post_out.csv"
+    csv_path = args.csv_path
+    file_dir, file_name = os.path.split(csv_path)
+    post_path = os.path.join(file_dir, "post_" + file_name)
     f = open(csv_path, "r", encoding="utf-8")
     post_f = open(post_path, "w", newline="\n")
     wr = csv.writer(post_f)
@@ -84,4 +100,14 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = get_parser()
+    args = parser.parse_args()
+
+    def _print_config(config):
+        import pprint
+
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(vars(config))
+
+    _print_config(args)
+    main(args)
