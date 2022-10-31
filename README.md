@@ -63,6 +63,9 @@ bash shell_scripts/make_trn_for_make_script.sh
 python3 preprocess.py
 ```
 ## 3. (Optional) postprocess
+```bash
+python3 postprocess.py --csv_path={your_csv_dir}/{your_csv_filename}
+```
 혹여나 추가적인 전처리 잘못 (예를들면 feature, label이외의 length 3 list혹은 2보다 작은 list) 되거나 <br />
 num과 ko 데이터가 길이가 다른경우 (뭔가 매칭이 잘못되거나 짤린 데이터) <br />
 아마 seq2seq을 이용해 학습한다면, 불필요한 문장이 예측되어 정확도가 더 떨어질 수도 있다고 판단했습니다. <br />
