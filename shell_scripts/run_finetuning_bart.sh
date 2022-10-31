@@ -6,7 +6,8 @@ export OMP_NUM_THREADS=8
 CUDA_VISIBLE_DEVICES=$GPU_IDS \
 python3 -m torch.distributed.launch \
 	--nproc_per_node 3 ../bart_train.py \
-	--csv_paths="" \
+	--train_csv_paths="" \
+	--valid_csv_paths="" \
 	--model_name_or_path="" \
 	--output_dir="" \
 	--overwrite_output_dir \
