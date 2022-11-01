@@ -60,7 +60,7 @@ split_ratio = 0.1
 if not os.path.exists(save_dir):
     os.mkdir(save_dir)
 
-split_boundary = len(sent_pair) * split_ratio
+split_boundary = int(len(sent_pair) * split_ratio)
 valid_csv_data = sent_pair[:split_boundary]
 train_csv_data = sent_pair[split_boundary:]
 
