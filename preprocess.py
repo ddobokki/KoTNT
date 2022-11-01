@@ -7,6 +7,17 @@ from tqdm import tqdm
 from utils.sent_filters import sentence_filter
 from utils.TRNDataLoader import TRNDataLoader
 
+
+def save_file(csv_data: list, save_dir: str, file_name: str) -> None:
+    save_path = os.path.join(save_dir, file_name)
+    csv_columns = ["col_num", "col_sen"]
+
+    with open(save_path, "w", encoding="utf-8") as csv_file:
+        csv_data.insert(0, csv_columns)
+        writer = csv.writer(csv_file)
+        writer.writerows(csv_data)
+
+
 loader = TRNDataLoader("data/raw")
 # t = 0
 # for sent in loader.generate():
@@ -36,22 +47,28 @@ for sent in tqdm(loader.generate(), total=7326052):
             continue
         sent2 = sentence_filter(sent, mode="phonetic")
         sent_pair[sent1] = sent2
-    except:
+    except BaseException:
         pass
 
 
 sent_pair = list(map(lambda x, y: [x, y], list(sent_pair.keys()), list(sent_pair.values())))
 # dictionary를 [[key_1, value_1],[key2, value2]...[key_n, value_n]]
 
-save_foder = "data/csv"
+save_dir = "data/csv"
+split_ratio = 0.1
 
-if not os.path.exists(save_foder):
-    os.mkdir(save_foder)
+if not os.path.exists(save_dir):
+    os.mkdir(save_dir)
 
-with open(os.path.join(save_foder, "out.csv"), "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerows(sent_pair)
+split_boundary = len(sent_pair) * split_ratio
+valid_csv_data = sent_pair[:split_boundary]
+train_csv_data = sent_pair[split_boundary:]
 
-print(len(sent_pair))
+save_file(train_csv_data, save_dir, "train.csv")
+save_file(valid_csv_data, save_dir, "valid.csv")
 
+print("data_processing is done!")
+print("-----------------------------------------")
+print(f"train_data length: {len(train_csv_data)}")
+print(f"valid_data length: {len(valid_csv_data)}")
 # [TODO] 클린 코드, 하드코딩 제거, 모듈화?
