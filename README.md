@@ -76,3 +76,8 @@ num과 ko 데이터가 길이가 다른경우 (뭔가 매칭이 잘못되거나 
 
 결론적으로, 이런 데이터들을 처리하여 post_out.csv로 만들어줍니다. <br />
 원리는 sequencematcher 유사도를 사용했고, 인간 판단의 임계치를 활용했으므로, 100% 보장은 안되지만 전체 데이터의 15%를 전수검사 했을 시 오차범위는 없었습니다.
+
+# 모델 Repo (HuggingFace🤗)
+모델과 성능 등을 확인하려면 하기 URL을 참고하세요. <br />
+ko-barTNumText: https://huggingface.co/lIlBrother/ko-barTNumText <br />
+ko-TextNumbarT: https://huggingface.co/lIlBrother/ko-TextNumbarT
