@@ -5,3 +5,5 @@ data/raw
 raw.zip
 csv
 wandb
+output/
+.cache/

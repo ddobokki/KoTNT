@@ -11,7 +11,8 @@ def bart_preprocess(batch, tokenizer):
     model_inputs["labels"] = reversed_labels
     return model_inputs
 
-def t5_preprocess(raw,prompt, tokenizer):
+
+def t5_preprocess(raw, prompt, tokenizer):
     """"""
     # prompt = "translation_num_to_text"
     train_input = f"""{prompt}: {raw["num_col"]}"""
@@ -24,5 +25,21 @@ def t5_preprocess(raw,prompt, tokenizer):
     result = {"sen_col": train_encoded["input_ids"], "num_col": label_encoded["input_ids"]}
     return result
 
-def gpt_preprocess(raw, tokenizer):
-    pass
+
+def gpt_preprocess(raw, tokenizer, train_type):
+    num_col_text = raw["num_col"]
+    sen_col_text = raw["sen_col"]
+    BOS = tokenizer.bos_token
+    EOS = tokenizer.eos_token
+
+    if train_type == "NTT":
+        text = BOS + num_col_text + EOS + BOS + sen_col_text
+    elif train_type == "TTN":
+        text = BOS + sen_col_text + EOS + BOS + num_col_text
+    else:
+        raise Exception
+
+    raw = tokenizer(text)
+    raw["labels"] = raw["input_ids"]
+
+    return raw
