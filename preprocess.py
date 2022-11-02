@@ -10,7 +10,7 @@ from utils.TRNDataLoader import TRNDataLoader
 
 def save_file(csv_data: list, save_dir: str, file_name: str) -> None:
     save_path = os.path.join(save_dir, file_name)
-    csv_columns = ["col_num", "col_sen"]
+    csv_columns = ["num_col", "sen_col"]
 
     with open(save_path, "w", encoding="utf-8") as csv_file:
         csv_data.insert(0, csv_columns)
