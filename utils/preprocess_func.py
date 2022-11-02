@@ -33,9 +33,9 @@ def gpt_preprocess(raw, tokenizer, train_type):
     EOS = tokenizer.eos_token
 
     if train_type == "NTT":
-        text = BOS + num_col_text + EOS + BOS + sen_col_text
+        text = BOS + num_col_text + EOS + BOS + sen_col_text + EOS
     elif train_type == "TTN":
-        text = BOS + sen_col_text + EOS + BOS + num_col_text
+        text = BOS + sen_col_text + EOS + BOS + num_col_text + EOS
     else:
         raise Exception
 
