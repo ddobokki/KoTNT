@@ -11,6 +11,7 @@ from datasets import load_dataset
 from evaluate import load
 from setproctitle import setproctitle
 from transformers import (
+    AutoConfig,
     AutoModelForCausalLM,
     AutoModelForSeq2SeqLM,
     AutoTokenizer,
@@ -38,9 +39,13 @@ def main(model_args: ModelArguments, data_args: DatasetsArguments, training_args
     # [TODO] valid가 없으면 train에서 스플릿해서 나누는 코드 작성
     # train_csv_paths? s?
 
+    config = AutoConfig.from_pretrained(model_args.model_name_or_path)
+
+    model_max_length = config.max_position_embeddings if hasattr(config, "max_position_embeddings") else config.n_ctx
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
-        model_max_length=1024,
+        model_max_length=model_max_length,
         bos_token="<s>",
         eos_token="</s>",
         unk_token="<unk>",
