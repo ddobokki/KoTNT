@@ -23,3 +23,11 @@ class ModelArguments:
         default="forward",
         metadata={"help": "How inference your label direction? default: forward [forward, backward]"},
     )
+    t5_task: str = field(
+        default=None,
+        metadata={"help": ""},
+    )
+    config_name_or_path: str = field(
+        default=None,
+        metadata={"help": ""},
+    )
