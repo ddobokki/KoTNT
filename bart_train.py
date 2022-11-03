@@ -3,7 +3,6 @@
 import logging
 import os
 import sys
-import pandas as pd
 from typing import Dict, List
 import numpy as np
 import transformers
@@ -25,6 +24,20 @@ from transformers.trainer_utils import get_last_checkpoint, is_main_process, Eva
 from utils import DatasetsArguments, ModelArguments, TNTTrainingArguments
 
 logger = logging.getLogger(__name__)
+
+
+def csvs_to_datasets(csv_paths):
+    import pandas as pd
+
+    concat_list = list()
+    for csv_path in csv_paths:
+        csv_df = pd.read_csv(
+            csv_path,
+            index_col=None,
+        )
+        concat_list.append(csv_df)
+        tot_df = pd.concat(concat_list, axis=0, ignore_index=True)
+    return Dataset.from_pandas(tot_df)
 
 
 def main() -> None:
@@ -110,36 +123,25 @@ def main() -> None:
         labels = tokenizer(
             batch["num_col"],
         )
-        if model_args.direction == "backward":
-            labels = list(reversed(labels["input_ids"]))
-            labels.append(tokenizer.eos_token_id)
-            model_inputs["labels"] = labels
-        else:
-            labels = labels["input_ids"]
-            labels.append(tokenizer.eos_token_id)
-            model_inputs["labels"] = labels
+        labels = labels["input_ids"]
+        labels.append(tokenizer.eos_token_id)
+        model_inputs["labels"] = labels
         return model_inputs
 
     """
     @@@@@@@@@@@@@@@@@@@@ RAW Data 로딩, 토크나이징 진행, 빠르게 불러 쓰기 위해 train datasets만 임시 저장
     """
+    train_datasets = None
+    valid_datasets = None
     if training_args.do_train:
-        if os.path.isdir(data_args.temp_datasets_dir):
+        if data_args.temp_datasets_dir is not None and os.path.isdir(data_args.temp_datasets_dir):
             train_datasets = load_from_disk(data_args.temp_datasets_dir)
         else:
-            train_df = pd.read_csv(
-                data_args.train_csv_paths,
-                index_col=None,
-            )
-            valid_datasets = Dataset.from_pandas(train_df)
+            train_datasets = csvs_to_datasets(data_args.train_csv_paths)
             train_datasets = train_datasets.map(tokenize, remove_columns=["num_col", "sen_col"])
             train_datasets.save_to_disk(data_args.temp_datasets_dir)
-    elif training_args.do_eval or training_args.do_predict:
-        valid_df = pd.read_csv(
-            data_args.valid_csv_paths,
-            index_col=None,
-        )
-        valid_datasets = Dataset.from_pandas(valid_df)
+    if training_args.do_eval or training_args.do_predict:
+        valid_datasets = csvs_to_datasets(data_args.valid_csv_paths)
         valid_datasets = valid_datasets.map(tokenize, remove_columns=["num_col", "sen_col"])
 
     """
@@ -152,14 +154,10 @@ def main() -> None:
         result = dict()
 
         predicts = evaluation_result.predictions
-        if model_args.direction == "backward":
-            predicts = np.flip(predicts, axis=-1)
         predicts = np.where(predicts != -100, predicts, tokenizer.pad_token_id)
         decoded_preds = tokenizer.batch_decode(predicts, skip_special_tokens=True)
 
         labels = evaluation_result.label_ids
-        if model_args.direction == "backward":
-            labels = np.flip(labels, axis=-1)
         labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
         decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
 
