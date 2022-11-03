@@ -19,7 +19,7 @@ SCENARIO_NAME=KconfSpeech
 
 python raw_transcripts_preproc/make_aihub_to_trn.py \
     --data_root_dir ${DATA_ROOT_DIR} \
-    --output_dir /data2/bart/temp_workspace/nlp/KoGPT_num_converter/data/raw \
+    --output_dir data/raw \
     --scenario_name ${SCENARIO_NAME} \
     --is_train ${IS_TRAIN} \
     --is_make_dev ${IS_MAKE_DEV}
