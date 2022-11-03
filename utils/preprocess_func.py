@@ -5,7 +5,7 @@ def bart_preprocess(batch, tokenizer, train_type):
     else:
         model_inputs = tokenizer(batch["sen_col"], return_length=True)
         labels = tokenizer(batch["num_col"])
-    labels = list(reversed(labels["input_ids"]))
+    labels = labels["input_ids"]
     labels.append(tokenizer.eos_token_id)
     model_inputs["labels"] = labels
     return model_inputs
