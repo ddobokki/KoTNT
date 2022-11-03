@@ -8,6 +8,7 @@ python3 -m torch.distributed.launch \
 	--nproc_per_node 3 ../bart_train.py \
 	--train_csv_paths="" \
 	--valid_csv_paths="" \
+	--temp_datasets_dir="" \
 	--model_name_or_path="" \
 	--output_dir="" \
 	--overwrite_output_dir \
@@ -31,7 +32,7 @@ python3 -m torch.distributed.launch \
     --cache_dir="./.cache" \
 	--group_by_length \
 	--fp16 \
-	--metric_for_best_model="eval_loss" \
+	--metric_for_best_model="eval_bleu" \
     --load_best_model_at_end \
 	--do_train \
 	--do_eval \
@@ -39,6 +40,5 @@ python3 -m torch.distributed.launch \
     --wandb_project="" \
     --wandb_entity="" \
     --wandb_name="" \
-    --greater_is_better="false" \
-	--predict_with_generate="false" \
-	--direction="forward"
+    --greater_is_better="true" \
+	--predict_with_generate="false"

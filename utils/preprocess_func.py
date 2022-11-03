@@ -1,14 +1,13 @@
-def bart_preprocess(batch, tokenizer):
-    model_inputs = tokenizer(
-        batch["num_sent"],
-        return_length=True,
-    )
-    labels = tokenizer(
-        batch["ko_sent"],
-    )
-    reversed_labels = list(reversed(labels["input_ids"]))
-    reversed_labels.append(tokenizer.eos_token_id)
-    model_inputs["labels"] = reversed_labels
+def bart_preprocess(batch, tokenizer, train_type):
+    if train_type == "NTT":
+        model_inputs = tokenizer(batch["num_col"], return_length=True)
+        labels = tokenizer(batch["sen_col"])
+    else:
+        model_inputs = tokenizer(batch["sen_col"], return_length=True)
+        labels = tokenizer(batch["num_col"])
+    labels = list(reversed(labels["input_ids"]))
+    labels.append(tokenizer.eos_token_id)
+    model_inputs["labels"] = labels
     return model_inputs
 
 

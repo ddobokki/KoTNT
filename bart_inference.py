@@ -9,25 +9,6 @@ from transformers.pipelines.text2text_generation import ReturnType
 from utils import InferenceArguments
 
 
-class BartText2TextGenerationPipeline(Text2TextGenerationPipeline):
-    def postprocess(self, model_outputs, return_type=ReturnType.TEXT, clean_up_tokenization_spaces=False):
-        records = []
-        reversed_model_outputs = torch.flip(model_outputs["output_ids"][0], dims=[-1])
-        for output_ids in reversed_model_outputs:
-            if return_type == ReturnType.TENSORS:
-                record = {f"{self.return_name}_token_ids": output_ids}
-            elif return_type == ReturnType.TEXT:
-                record = {
-                    f"{self.return_name}_text": self.tokenizer.decode(
-                        output_ids,
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=clean_up_tokenization_spaces,
-                    )
-                }
-            records.append(record)
-        return records
-
-
 def main(inference_args: Tuple) -> None:
     texts = ["그러게 누가 6시까지 술을 마시래?"]
     tokenizer = AutoTokenizer.from_pretrained(
@@ -38,10 +19,7 @@ def main(inference_args: Tuple) -> None:
         inference_args.model_name_or_path,
     )
 
-    if model.config.model_type == "bart" and inference_args.direction == "backward":
-        seq2seqlm_pipeline = BartText2TextGenerationPipeline(model=model, tokenizer=tokenizer)
-    else:
-        seq2seqlm_pipeline = Text2TextGenerationPipeline(model=model, tokenizer=tokenizer)
+    seq2seqlm_pipeline = Text2TextGenerationPipeline(model=model, tokenizer=tokenizer)
 
     kwargs = {
         "min_length": inference_args.min_length,

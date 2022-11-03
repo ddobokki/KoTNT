@@ -6,5 +6,4 @@ python3 ../bart_inference.py \
 	--min_length="0" \
 	--max_length="1206" \
 	--do_sample="false" \
-	--num_beam_groups="1" \
-	--direction="backward"
+	--num_beam_groups="1"
