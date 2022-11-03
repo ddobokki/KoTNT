@@ -34,7 +34,11 @@ DATA_EXTENTION = "csv"
 def main(model_args: ModelArguments, data_args: DatasetsArguments, training_args: TNTTrainingArguments):
     set_seed(training_args.seed)
 
-    data_files = {"train": data_args.train_csv_paths, "validation": data_args.valid_csv_paths}
+    data_files = dict()
+    if data_args.train_csv_paths is not None:
+        data_files.update({"train": data_args.train_csv_paths})
+    if data_args.valid_csv_paths is not None:
+        data_files.update({"validation": data_args.valid_csv_paths})
     dataset = load_dataset(DATA_EXTENTION, data_files=data_files, cache_dir=model_args.cache_dir)
     # [TODO] valid가 없으면 train에서 스플릿해서 나누는 코드 작성
     # train_csv_paths? s?
@@ -59,7 +63,7 @@ def main(model_args: ModelArguments, data_args: DatasetsArguments, training_args
     elif "t5" in model_args.model_name_or_path:
         preprocess = t5_preprocess
     elif "bart" in model_args.model_name_or_path:
-        preprocess = bart_preprocess
+        preprocess = partial(bart_preprocess, tokenizer=tokenizer, train_type=training_args.train_type)
 
     dataset = dataset.map(preprocess, num_proc=data_args.num_proc, remove_columns=dataset["train"].column_names)
     train_dataset = dataset["train"]
